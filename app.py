@@ -1,6 +1,7 @@
 import pandas as pd
 import streamlit as st
 
+from ai_report import generate_management_report
 from assessment_rules import calculate_automatic_scores
 from scenario_analysis import (
     SCENARIO_ASSUMPTIONS,
@@ -39,6 +40,13 @@ SCORE_LABELS = {
     "regulatory_control": "法規與責任可控性",
     "clinical_adoption": "臨床採用可行性",
 }
+
+
+if "assessment_result" not in st.session_state:
+    st.session_state.assessment_result = None
+
+if "ai_management_report" not in st.session_state:
+    st.session_state.ai_management_report = None
 
 
 def format_currency(value: float) -> str:
@@ -279,11 +287,6 @@ with st.form("assessment_form"):
     st.divider()
     st.header("四、重大風險閘門")
 
-    st.caption(
-        "重大條件尚未具備時，即使財務報酬良好，"
-        "系統也不會直接建議全面導入。"
-    )
-
     gate_col1, gate_col2 = st.columns(2)
 
     with gate_col1:
@@ -332,6 +335,14 @@ if submitted:
             if revenue_is_objective
             else 0.0
         )
+
+        project_info = {
+            "project_name": project_name,
+            "department": department,
+            "ai_type": ai_type,
+            "implementation_model": implementation_model,
+            "use_case": use_case,
+        }
 
         base_financial_inputs = {
             "monthly_cases": monthly_cases,
@@ -387,9 +398,37 @@ if submitted:
             hard_gate_risks=hard_gate_risks,
         )
 
+        project_info["feasibility_score"] = feasibility_score
+
+        st.session_state.assessment_result = {
+            "project_info": project_info,
+            "base_financial_inputs": base_financial_inputs,
+            "financials": financials,
+            "scenario_results": scenario_results,
+            "scores": scores,
+            "score_reasons": score_reasons,
+            "feasibility_score": feasibility_score,
+            "hard_gate_risks": hard_gate_risks,
+            "decision": decision,
+        }
+
+        st.session_state.ai_management_report = None
+
     except ValueError as error:
         st.error(f"輸入資料有誤：{error}")
-        st.stop()
+
+
+result = st.session_state.assessment_result
+
+if result is not None:
+    project_info = result["project_info"]
+    financials = result["financials"]
+    scenario_results = result["scenario_results"]
+    scores = result["scores"]
+    score_reasons = result["score_reasons"]
+    feasibility_score = result["feasibility_score"]
+    hard_gate_risks = result["hard_gate_risks"]
+    decision = result["decision"]
 
     st.divider()
     st.header("評估結果")
@@ -543,12 +582,8 @@ if submitted:
             }
         )
 
-    scenario_dataframe = pd.DataFrame(
-        scenario_rows
-    )
-
     st.dataframe(
-        scenario_dataframe,
+        pd.DataFrame(scenario_rows),
         use_container_width=True,
         hide_index=True,
     )
@@ -557,9 +592,7 @@ if submitted:
         scenario_chart_rows
     ).set_index("情境")
 
-    st.bar_chart(
-        scenario_chart_dataframe
-    )
+    st.bar_chart(scenario_chart_dataframe)
 
     conservative_financials = scenario_results[
         "保守情境"
@@ -579,8 +612,8 @@ if submitted:
 
     if conservative_first_year_net < 0:
         st.warning(
-            "保守情境下，第一年淨效益為負，代表專案可能面臨"
-            "初期預算與現金流壓力。"
+            "保守情境下第一年淨效益為負，"
+            "代表專案可能面臨初期預算與現金流壓力。"
         )
 
     if (
@@ -600,12 +633,6 @@ if submitted:
         st.warning(
             f"保守情境預估需 {conservative_payback:.1f} 個月回本，"
             "建議確認醫院是否能接受超過兩年的資金回收期。"
-        )
-
-    if conservative_roi is not None and conservative_roi <= 0:
-        st.error(
-            "保守情境下三年 ROI 不為正，專案對關鍵假設相當敏感，"
-            "建議縮小試點規模或重新談判成本。"
         )
 
     with st.expander("查看三情境假設"):
@@ -663,9 +690,7 @@ if submitted:
             }
         )
 
-    score_dataframe = pd.DataFrame(
-        score_rows
-    )
+    score_dataframe = pd.DataFrame(score_rows)
 
     st.dataframe(
         score_dataframe,
@@ -673,12 +698,10 @@ if submitted:
         hide_index=True,
     )
 
-    chart_dataframe = score_dataframe[
-        ["評估面向", "分數"]
-    ].set_index("評估面向")
-
     st.bar_chart(
-        chart_dataframe
+        score_dataframe[
+            ["評估面向", "分數"]
+        ].set_index("評估面向")
     )
 
     st.subheader("重大風險")
@@ -687,23 +710,79 @@ if submitted:
         for risk in hard_gate_risks:
             st.warning(risk)
     else:
-        st.success(
-            "目前沒有觸發重大風險閘門。"
+        st.success("目前沒有觸發重大風險閘門。")
+
+    st.divider()
+    st.header("AI 管理層報告")
+
+    st.caption(
+        "AI 僅負責解讀既有計算結果，不會修改 ROI、"
+        "可行性分數、重大風險或規則引擎決策。"
+    )
+
+    generate_report = st.button(
+        "產生 AI 管理層報告",
+        type="primary",
+        use_container_width=True,
+    )
+
+    if generate_report:
+        with st.spinner("正在整理管理層摘要與試點建議……"):
+            try:
+                st.session_state.ai_management_report = (
+                    generate_management_report(
+                        project_info=project_info,
+                        financials=financials,
+                        scenario_results=scenario_results,
+                        scores=scores,
+                        score_reasons=score_reasons,
+                        hard_gate_risks=hard_gate_risks,
+                        decision=decision,
+                    )
+                )
+
+            except Exception as error:
+                st.error(
+                    "AI 報告產生失敗，請檢查 API key、"
+                    "API 額度或網路狀態。"
+                )
+                st.exception(error)
+
+    report = st.session_state.ai_management_report
+
+    if report:
+        st.success("AI 管理層報告已完成")
+        st.markdown(report)
+
+        st.download_button(
+            label="下載管理層報告（Markdown）",
+            data=report,
+            file_name="hospital_ai_management_report.md",
+            mime="text/markdown",
+            use_container_width=True,
         )
 
     with st.expander("查看專案輸入摘要"):
         st.markdown(
             f"""
-**專案名稱：** {project_name}
+**專案名稱：** {project_info["project_name"]}
 
-**導入科別：** {department}
+**導入科別：** {project_info["department"]}
 
-**AI 應用類型：** {ai_type}
+**AI 應用類型：** {project_info["ai_type"]}
 
-**導入模式：** {implementation_model}
+**導入模式：** {project_info["implementation_model"]}
 
 **應用情境：**
 
-{use_case}
+{project_info["use_case"]}
 """
         )
+
+    if st.button(
+        "清除本次評估結果",
+        use_container_width=True,
+    ):
+        st.session_state.assessment_result = None
+        st.session_state.ai_management_report = None
+        st.rerun()
