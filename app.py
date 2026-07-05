@@ -1,8 +1,14 @@
+import json
+
 import pandas as pd
 import streamlit as st
 
 from ai_report import generate_management_report
 from assessment_rules import calculate_automatic_scores
+from integrated_decision import (
+    IntegratedDecisionError,
+    build_integrated_decision,
+)
 from research_ui import render_research_section
 from scenario_analysis import (
     SCENARIO_ASSUMPTIONS,
@@ -24,7 +30,7 @@ st.set_page_config(
 
 st.title("🏥 Hospital AI Value Assessment Agent")
 st.caption(
-    "醫療 AI 市場研究、商業價值、導入可行性與風險評估工具"
+    "Taiwan-first 市場研究、林口長庚商業價值、導入可行性與風險評估工具"
 )
 
 st.info(
@@ -51,6 +57,15 @@ if "assessment_result" not in st.session_state:
 if "ai_management_report" not in st.session_state:
     st.session_state.ai_management_report = None
 
+if "integrated_decision" not in st.session_state:
+    st.session_state.integrated_decision = None
+
+REPORT_UI_VERSION = "linkou-integrated-report-v2"
+
+if st.session_state.get("report_ui_version") != REPORT_UI_VERSION:
+    st.session_state.report_ui_version = REPORT_UI_VERSION
+    st.session_state.ai_management_report = None
+
 
 def format_currency(value: float) -> str:
     return f"NT$ {value:,.0f}"
@@ -71,17 +86,17 @@ def level_select(
 
 
 # ---------------------------------------------------------
-# 市場研究 Agent
+# Taiwan-first 市場研究 Agent
 # ---------------------------------------------------------
 
 render_research_section()
 
 st.divider()
-st.header("📊 醫院內部商業可行性評估")
+st.header("📊 林口長庚院內商業可行性評估")
 
 st.caption(
-    "完成外部市場研究後，可輸入醫院內部營運與成本資料，"
-    "計算 ROI、回本時間、導入風險與建議決策。"
+    "完成台灣外部市場研究後，輸入林口長庚院內營運與成本假設，"
+    "系統會計算 ROI、回本時間、情境風險與院內可行性。"
 )
 
 
@@ -102,7 +117,7 @@ with st.form("assessment_form"):
 
         department = st.text_input(
             "導入科別",
-            value="急診部、放射科",
+            value="林口長庚急診部、放射診斷科",
         )
 
     with basic_col2:
@@ -131,8 +146,8 @@ with st.form("assessment_form"):
     use_case = st.text_area(
         "應用情境",
         value=(
-            "在急診導入胸部 X 光 AI，協助急診與放射科醫師"
-            "優先辨識疑似氣胸、肺炎或其他高風險影像。"
+            "在林口長庚急診導入胸部 X 光 AI，協助急診與放射科醫師"
+            "進行高風險影像優先排序與輔助判讀。"
         ),
         height=110,
     )
@@ -220,13 +235,14 @@ with st.form("assessment_form"):
             min_value=0.0,
             value=800_000.0,
             step=100_000.0,
+            disabled=not revenue_is_objective,
         )
 
     st.divider()
     st.header("三、導入成熟度問卷")
 
     st.caption(
-        "系統會根據財務數據與下列答案，自動產生八面向評分。"
+        "系統會根據財務數據與下列答案，自動產生八面向院內可行性評分。"
     )
 
     maturity_col1, maturity_col2 = st.columns(2)
@@ -348,7 +364,7 @@ with st.form("assessment_form"):
         )
 
     submitted = st.form_submit_button(
-        "開始自動評估",
+        "開始院內自動評估",
         type="primary",
         use_container_width=True,
     )
@@ -422,7 +438,7 @@ if submitted:
             certification_ready=certification_ready,
         )
 
-        decision = make_decision(
+        rule_based_decision = make_decision(
             feasibility_score=feasibility_score,
             financials=financials,
             hard_gate_risks=hard_gate_risks,
@@ -430,7 +446,7 @@ if submitted:
 
         project_info["feasibility_score"] = feasibility_score
 
-        st.session_state.assessment_result = {
+        assessment_result = {
             "project_info": project_info,
             "base_financial_inputs": base_financial_inputs,
             "financials": financials,
@@ -439,13 +455,31 @@ if submitted:
             "score_reasons": score_reasons,
             "feasibility_score": feasibility_score,
             "hard_gate_risks": hard_gate_risks,
-            "decision": decision,
+            "decision": rule_based_decision,
         }
 
+        st.session_state.assessment_result = assessment_result
         st.session_state.ai_management_report = None
 
-    except ValueError as error:
-        st.error(f"輸入資料有誤：{error}")
+        research_result = st.session_state.get(
+            "tw_research_result"
+        )
+
+        if research_result is not None:
+            st.session_state.integrated_decision = (
+                build_integrated_decision(
+                    research_result=research_result,
+                    hospital_feasibility_score=feasibility_score,
+                    financials=financials,
+                    scenario_results=scenario_results,
+                    hard_gate_risks=hard_gate_risks,
+                )
+            )
+        else:
+            st.session_state.integrated_decision = None
+
+    except (ValueError, IntegratedDecisionError) as error:
+        st.error(f"輸入資料或整合資料有誤：{error}")
 
     except Exception as error:
         st.error("評估過程發生錯誤。")
@@ -468,29 +502,29 @@ if result is not None:
     score_reasons = result["score_reasons"]
     feasibility_score = result["feasibility_score"]
     hard_gate_risks = result["hard_gate_risks"]
-    decision = result["decision"]
+    rule_based_decision = result["decision"]
 
     st.divider()
-    st.header("評估結果")
+    st.header("院內評估結果")
 
-    if decision == "建議優先進入受控試點":
-        st.success(f"### {decision}")
+    if rule_based_decision == "建議優先進入受控試點":
+        st.success(f"### {rule_based_decision}")
 
-    elif decision in {
+    elif rule_based_decision in {
         "建議補充資料後進入受控試點",
         "建議補充資料後再評估",
     }:
-        st.warning(f"### {decision}")
+        st.warning(f"### {rule_based_decision}")
 
     else:
-        st.error(f"### {decision}")
+        st.error(f"### {rule_based_decision}")
 
     result_col1, result_col2, result_col3, result_col4 = (
         st.columns(4)
     )
 
     result_col1.metric(
-        "可行性總分",
+        "院內可行性總分",
         f"{feasibility_score:.1f} / 100",
     )
 
@@ -729,7 +763,7 @@ if result is not None:
             "不代表實際結果或保證報酬。"
         )
 
-    st.subheader("八面向自動評分")
+    st.subheader("八面向院內自動評分")
 
     score_rows = []
 
@@ -759,7 +793,7 @@ if result is not None:
         ].set_index("評估面向")
     )
 
-    st.subheader("重大風險")
+    st.subheader("院內重大風險")
 
     if hard_gate_risks:
         for risk in hard_gate_risks:
@@ -771,26 +805,135 @@ if result is not None:
         )
 
     # -----------------------------------------------------
-    # AI 管理層報告
+    # 台灣市場＋林口長庚＋財務整合決策
     # -----------------------------------------------------
 
     st.divider()
-    st.header("🤖 AI 管理層報告")
+    st.header("🧭 林口長庚整合決策")
+
+    integrated = st.session_state.integrated_decision
+
+    if integrated is None:
+        st.warning(
+            "尚未取得可整合的台灣研究結果。請先在頁面上方完成四項台灣研究，"
+            "再重新按一次『開始院內自動評估』。"
+        )
+    else:
+        if integrated["formal_score_available"]:
+            if integrated["decision_level"] in {"試點", "POC"}:
+                st.success(f"### {integrated['decision']}")
+            elif integrated["decision_level"] in {"補件", "重設方案"}:
+                st.warning(f"### {integrated['decision']}")
+            else:
+                st.error(f"### {integrated['decision']}")
+
+            integrated_col1, integrated_col2, integrated_col3, integrated_col4 = (
+                st.columns(4)
+            )
+
+            integrated_col1.metric(
+                "整合決策分數",
+                f"{integrated['integrated_score']:.1f} / 100",
+            )
+
+            integrated_col2.metric(
+                "台灣市場成熟度",
+                f"{integrated['market']['score']:.2f} / 5",
+            )
+
+            integrated_col3.metric(
+                "院內可行性",
+                f"{integrated['hospital']['score']:.1f} / 100",
+            )
+
+            integrated_col4.metric(
+                "財務韌性",
+                f"{integrated['financial']['score']:.1f} / 100",
+            )
+
+            st.caption(
+                "整合權重：台灣市場 30%｜林口長庚院內可行性 40%｜財務韌性 30%。"
+            )
+
+            decision_chart = pd.DataFrame(
+                [
+                    {
+                        "決策支柱": "台灣市場成熟度",
+                        "分數": integrated["market"]["score_100"],
+                    },
+                    {
+                        "決策支柱": "院內可行性",
+                        "分數": integrated["hospital"]["score"],
+                    },
+                    {
+                        "決策支柱": "財務韌性",
+                        "分數": integrated["financial"]["score"],
+                    },
+                ]
+            ).set_index("決策支柱")
+
+            st.bar_chart(decision_chart)
+
+        else:
+            st.warning(f"### {integrated['decision']}")
+            st.metric(
+                "台灣證據覆蓋率",
+                f"{integrated['market']['coverage_percent']}%",
+            )
+
+        if integrated["blockers"]:
+            st.subheader("決策阻礙")
+            for blocker in integrated["blockers"]:
+                st.error(blocker)
+
+        if integrated["warnings"]:
+            st.subheader("重要警示")
+            for warning in integrated["warnings"]:
+                st.warning(warning)
+
+        st.subheader("建議下一步")
+        for action in integrated["next_actions"]:
+            st.markdown(f"- {action}")
+
+    # -----------------------------------------------------
+    # 完整整合管理層報告
+    # -----------------------------------------------------
+
+    st.divider()
+    st.header("📄 林口長庚完整整合管理層報告")
 
     st.caption(
-        "AI 僅負責解讀既有研究與計算結果，"
-        "不會自行修改 ROI、評分、重大風險或規則引擎決策。"
+        "報告會整合 Taiwan-first 台灣市場研究、可追溯公開來源、"
+        "院內八面向評分、三情境財務分析、重大風險與整合決策。"
+        "AI 只負責管理層敘事；表格、數字、分數與來源由 Python 產生。"
     )
 
+    research_result = st.session_state.get("tw_research_result")
+    integrated = st.session_state.get("integrated_decision")
+
+    report_ready = bool(
+        research_result
+        and research_result.get("status") == "success"
+        and integrated
+        and integrated.get("formal_score_available")
+    )
+
+    if not report_ready:
+        st.warning(
+            "完整報告需要四項台灣研究與林口長庚整合決策皆完成。"
+            "請先完成頁面上方研究，再重新按一次『開始院內自動評估』。"
+        )
+
     generate_report = st.button(
-        "產生 AI 管理層報告",
+        "產生完整整合管理層報告",
         type="primary",
         use_container_width=True,
+        disabled=not report_ready,
     )
 
     if generate_report:
         with st.spinner(
-            "正在整理管理層摘要與試點建議……"
+            "正在整合台灣研究、財務情境、風險與試點建議……"
         ):
             try:
                 st.session_state.ai_management_report = (
@@ -801,35 +944,78 @@ if result is not None:
                         scores=scores,
                         score_reasons=score_reasons,
                         hard_gate_risks=hard_gate_risks,
-                        decision=decision,
+                        decision=rule_based_decision,
+                        research_result=research_result,
+                        integrated_decision=integrated,
                     )
                 )
 
             except Exception as error:
-                st.error(
-                    "AI 報告產生失敗，請檢查 API key、"
-                    "API 額度或網路狀態。"
-                )
+                st.error("完整管理層報告建立失敗。")
 
                 with st.expander("查看技術錯誤"):
                     st.exception(error)
 
-    report = st.session_state.ai_management_report
+    report_record = st.session_state.ai_management_report
 
-    if report:
-        st.success(
-            "AI 管理層報告已完成。"
+    if isinstance(report_record, dict) and report_record.get("markdown"):
+        st.success("完整整合管理層報告已完成。")
+
+        report_col1, report_col2, report_col3 = st.columns(3)
+        report_col1.metric(
+            "台灣公開來源",
+            f"{report_record.get('source_count', 0)} 項",
+        )
+        report_col2.metric(
+            "AI 管理層敘事",
+            "已使用" if report_record.get("ai_used") else "規則式備援",
+        )
+        report_col3.metric(
+            "報告版本",
+            report_record.get("report_version", "未知"),
         )
 
-        st.markdown(report)
+        if report_record.get("warning"):
+            st.warning(report_record["warning"])
 
-        st.download_button(
-            label="下載管理層報告（Markdown）",
-            data=report,
-            file_name="hospital_ai_management_report.md",
-            mime="text/markdown",
-            use_container_width=True,
+        st.markdown(report_record["markdown"])
+
+        safe_project_name = (
+            project_info.get("project_name", "hospital_ai")
+            .replace(" ", "_")
+            .replace("/", "_")
         )
+
+        download_col1, download_col2 = st.columns(2)
+
+        with download_col1:
+            st.download_button(
+                label="下載完整管理層報告（Markdown）",
+                data=report_record["markdown"],
+                file_name=f"{safe_project_name}_integrated_report.md",
+                mime="text/markdown",
+                use_container_width=True,
+            )
+
+        with download_col2:
+            st.download_button(
+                label="下載完整決策資料包（JSON）",
+                data=report_record["audit_json"],
+                file_name=f"{safe_project_name}_decision_audit.json",
+                mime="application/json",
+                use_container_width=True,
+            )
+
+        with st.expander("查看報告產生資訊"):
+            st.json(
+                {
+                    "generated_at": report_record.get("generated_at"),
+                    "report_version": report_record.get("report_version"),
+                    "ai_used": report_record.get("ai_used"),
+                    "model": report_record.get("model"),
+                    "source_count": report_record.get("source_count"),
+                }
+            )
 
     with st.expander("查看專案輸入摘要"):
         st.markdown(
@@ -849,9 +1035,10 @@ if result is not None:
         )
 
     if st.button(
-        "清除本次評估結果",
+        "清除本次院內評估結果",
         use_container_width=True,
     ):
         st.session_state.assessment_result = None
         st.session_state.ai_management_report = None
+        st.session_state.integrated_decision = None
         st.rerun()
