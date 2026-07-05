@@ -1,9 +1,22 @@
+# Secrets and local environment
 .env
 .venv/
-__pycache__/
-*.pyc
-.DS_Store
+.streamlit/secrets.toml
 
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local caches and generated research files
 .cache/
 research_output.json
 research_raw.md
+
+# OS and editors
+.DS_Store
+.vscode/
+.idea/
+
+# Logs
+*.log
