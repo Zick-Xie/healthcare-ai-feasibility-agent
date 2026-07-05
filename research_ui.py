@@ -108,7 +108,7 @@ def render_task_status(result: Dict[str, Any]) -> None:
             }
         )
 
-    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
 
 
 def render_maturity(result: Dict[str, Any]) -> None:
@@ -156,7 +156,7 @@ def render_maturity(result: Dict[str, Any]) -> None:
     if dimension_rows:
         st.dataframe(
             pd.DataFrame(dimension_rows),
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
 
@@ -195,7 +195,7 @@ def render_regulatory_task(
             }
             for item in products
         ]
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
 
     show_findings(
         data.get("key_findings", []),
@@ -282,7 +282,7 @@ def render_clinical_task(
             }
             for study in studies
         ]
-        st.dataframe(pd.DataFrame(study_rows), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(study_rows), width="stretch", hide_index=True)
 
         for study in studies:
             with st.expander(f"研究來源｜{study['title']}"):
@@ -337,7 +337,7 @@ def render_market_task(
             }
             for product in products
         ]
-        st.dataframe(pd.DataFrame(product_rows), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(product_rows), width="stretch", hide_index=True)
 
         for product in products:
             with st.expander(f"產品來源｜{product['company']}｜{product['product']}"):
@@ -451,7 +451,7 @@ def render_research_section() -> None:
         continue_research = st.button(
             "執行下一個未完成任務",
             type="primary",
-            use_container_width=True,
+            width="stretch",
             help=(
                 "每次只執行一項。成功結果會立即寫入快取；"
                 "下一次按鈕會接著跑下一項。"
@@ -473,7 +473,7 @@ def render_research_section() -> None:
 
         rerun_selected = st.button(
             "重新執行選定任務",
-            use_container_width=True,
+            width="stretch",
             help="只忽略選定任務的快取，不會重跑其他三項。",
         )
 
@@ -620,6 +620,6 @@ def render_research_section() -> None:
         data=json.dumps(result, ensure_ascii=False, indent=2),
         file_name="taiwan_medical_ai_research.json",
         mime="application/json",
-        use_container_width=True,
+        width="stretch",
     )
 

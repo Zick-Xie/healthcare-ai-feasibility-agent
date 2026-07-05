@@ -366,7 +366,7 @@ with st.form("assessment_form"):
     submitted = st.form_submit_button(
         "開始院內自動評估",
         type="primary",
-        use_container_width=True,
+        width="stretch",
     )
 
 
@@ -660,7 +660,7 @@ if result is not None:
 
     st.dataframe(
         pd.DataFrame(scenario_rows),
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )
 
@@ -754,7 +754,7 @@ if result is not None:
 
         st.dataframe(
             pd.DataFrame(assumption_rows),
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
 
@@ -783,7 +783,7 @@ if result is not None:
 
     st.dataframe(
         score_dataframe,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )
 
@@ -927,7 +927,7 @@ if result is not None:
     generate_report = st.button(
         "產生完整整合管理層報告",
         type="primary",
-        use_container_width=True,
+        width="stretch",
         disabled=not report_ready,
     )
 
@@ -994,7 +994,7 @@ if result is not None:
                 data=report_record["markdown"],
                 file_name=f"{safe_project_name}_integrated_report.md",
                 mime="text/markdown",
-                use_container_width=True,
+                width="stretch",
             )
 
         with download_col2:
@@ -1003,7 +1003,7 @@ if result is not None:
                 data=report_record["audit_json"],
                 file_name=f"{safe_project_name}_decision_audit.json",
                 mime="application/json",
-                use_container_width=True,
+                width="stretch",
             )
 
         with st.expander("查看報告產生資訊"):
@@ -1036,7 +1036,7 @@ if result is not None:
 
     if st.button(
         "清除本次院內評估結果",
-        use_container_width=True,
+        width="stretch",
     ):
         st.session_state.assessment_result = None
         st.session_state.ai_management_report = None
