@@ -174,6 +174,30 @@ def render_regulatory_task(
         return
 
     data = task["result"]
+    required_fields = [
+        "executive_summary",
+        "classification_reason",
+        "tfda_status_summary",
+        "score_reason",
+    ]
+    empty_fields = [
+        field_name
+        for field_name in required_fields
+        if not str(data.get(field_name, "")).strip()
+    ]
+
+    if empty_fields:
+        st.error(
+            "這項任務雖被標記為完成，但內容不完整。"
+            "請在上方選擇『TFDA 與台灣法規研究』後重新執行。"
+        )
+        st.caption("缺少欄位：" + "、".join(empty_fields))
+        raw_research = str(task.get("raw_research") or "").strip()
+        if raw_research:
+            with st.expander("查看已取得的原始研究筆記"):
+                st.write(raw_research)
+        return
+
     st.write(data["executive_summary"])
 
     col1, col2 = st.columns(2)
@@ -383,7 +407,7 @@ def render_linkou_assessment(result: Dict[str, Any], source_map: Dict[str, str])
 
 
 def render_research_section() -> None:
-    ui_version = "taiwan-single-task-v5"
+    ui_version = "taiwan-single-task-v7-quality-guard"
 
     if st.session_state.get("tw_research_ui_version") != ui_version:
         st.session_state.tw_research_ui_version = ui_version

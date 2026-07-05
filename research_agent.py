@@ -694,6 +694,90 @@ def format_unexpected_error(error: Exception) -> tuple[str, str]:
     safe_detail = raw_message[:500] if raw_message else "未取得更詳細的錯誤訊息。"
     return (error_type, safe_detail)
 
+def _has_meaningful_text(value: Any, minimum_length: int = 6) -> bool:
+    if not isinstance(value, str):
+        return False
+    normalized = " ".join(value.split()).strip()
+    return len(normalized) >= minimum_length
+
+
+def validate_structured_result(task: TaskConfig, parsed: BaseModel) -> None:
+    """避免空字串通過 Pydantic 後被誤標為研究成功。"""
+    data = parsed.model_dump(mode="json")
+
+    required_text_fields: Dict[str, List[str]] = {
+        "regulatory": [
+            "executive_summary",
+            "classification_reason",
+            "tfda_status_summary",
+            "score_reason",
+        ],
+        "adoption": ["executive_summary", "score_reason"],
+        "clinical": [
+            "executive_summary",
+            "score_reason",
+            "taiwan_validation_status",
+        ],
+        "market": [
+            "executive_summary",
+            "product_score_reason",
+            "business_score_reason",
+        ],
+    }
+
+    field_names = required_text_fields.get(task.task_id, ["executive_summary"])
+    missing_fields = [
+        field_name
+        for field_name in field_names
+        if not _has_meaningful_text(data.get(field_name))
+    ]
+
+    summary = data.get("executive_summary")
+    if not _has_meaningful_text(summary, minimum_length=12):
+        if "executive_summary" not in missing_fields:
+            missing_fields.append("executive_summary")
+
+    if missing_fields:
+        raise ResearchAgentError(
+            f"{task.label}已完成搜尋，但結構化結果缺少有效內容："
+            + "、".join(sorted(set(missing_fields)))
+            + "。這是輸出品質問題，不代表台灣沒有資料。"
+        )
+
+
+def is_meaningful_task_payload(task_payload: Optional[Dict[str, Any]]) -> bool:
+    if not isinstance(task_payload, dict):
+        return False
+
+    result = task_payload.get("result")
+    task_id = task_payload.get("task_id")
+    if not isinstance(result, dict) or not isinstance(task_id, str):
+        return False
+
+    required_text_fields: Dict[str, List[str]] = {
+        "regulatory": [
+            "executive_summary",
+            "classification_reason",
+            "tfda_status_summary",
+            "score_reason",
+        ],
+        "adoption": ["executive_summary", "score_reason"],
+        "clinical": [
+            "executive_summary",
+            "score_reason",
+            "taiwan_validation_status",
+        ],
+        "market": [
+            "executive_summary",
+            "product_score_reason",
+            "business_score_reason",
+        ],
+    }
+
+    fields = required_text_fields.get(task_id, ["executive_summary"])
+    return all(_has_meaningful_text(result.get(field)) for field in fields)
+
+
 def run_single_task(
     task: TaskConfig,
     case_description: str,
@@ -707,12 +791,14 @@ def run_single_task(
 
     if not force_refresh:
         fresh_cache = load_cache(cache_path)
-        if fresh_cache is not None:
+        if fresh_cache is not None and is_meaningful_task_payload(fresh_cache):
             fresh_cache["status"] = "cached"
             fresh_cache["cache_hit"] = True
             return fresh_cache
 
     stale_cache = load_cache(cache_path, allow_expired=True)
+    if stale_cache is not None and not is_meaningful_task_payload(stale_cache):
+        stale_cache = None
 
     client = OpenAI(
         api_key=os.environ["OPENAI_API_KEY"],
@@ -758,6 +844,7 @@ def run_single_task(
         )
 
         parsed = clean_source_urls(parsed, sources)
+        validate_structured_result(task, parsed)
 
         payload = {
             "task_id": task.task_id,
@@ -859,7 +946,7 @@ def is_completed_task(task_payload: Optional[Dict[str, Any]]) -> bool:
     return bool(
         task_payload
         and task_payload.get("status") in {"success", "cached", "stale_cache"}
-        and isinstance(task_payload.get("result"), dict)
+        and is_meaningful_task_payload(task_payload)
     )
 
 
@@ -888,6 +975,13 @@ def load_task_state(
 
     if cached is None:
         return empty_task_payload(task)
+
+    if not is_meaningful_task_payload(cached):
+        payload = empty_task_payload(task)
+        payload["error_message"] = (
+            "先前快取被偵測為內容不完整，請重新執行此任務。"
+        )
+        return payload
 
     cached["status"] = "cached" if load_cache(cache_path) is not None else "stale_cache"
     cached["cache_hit"] = True
