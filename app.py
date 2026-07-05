@@ -3,6 +3,7 @@ import streamlit as st
 
 from ai_report import generate_management_report
 from assessment_rules import calculate_automatic_scores
+from research_ui import render_research_section
 from scenario_analysis import (
     SCENARIO_ASSUMPTIONS,
     calculate_scenarios,
@@ -22,10 +23,12 @@ st.set_page_config(
 )
 
 st.title("🏥 Hospital AI Value Assessment Agent")
-st.caption("醫療 AI 商業價值、導入可行性與風險評估工具")
+st.caption(
+    "醫療 AI 市場研究、商業價值、導入可行性與風險評估工具"
+)
 
 st.info(
-    "本工具用於醫療 AI 專案的商業與導入可行性初評，"
+    "本工具用於醫療 AI 專案的市場研究與商業可行性初評，"
     "不提供醫療診斷或治療建議。"
 )
 
@@ -66,6 +69,25 @@ def level_select(
 
     return descriptions.index(selected) + 1
 
+
+# ---------------------------------------------------------
+# 市場研究 Agent
+# ---------------------------------------------------------
+
+render_research_section()
+
+st.divider()
+st.header("📊 醫院內部商業可行性評估")
+
+st.caption(
+    "完成外部市場研究後，可輸入醫院內部營運與成本資料，"
+    "計算 ROI、回本時間、導入風險與建議決策。"
+)
+
+
+# ---------------------------------------------------------
+# 商業可行性評估表單
+# ---------------------------------------------------------
 
 with st.form("assessment_form"):
     st.header("一、專案基本資料")
@@ -198,7 +220,6 @@ with st.form("assessment_form"):
             min_value=0.0,
             value=800_000.0,
             step=100_000.0,
-            disabled=not revenue_is_objective,
         )
 
     st.divider()
@@ -287,6 +308,11 @@ with st.form("assessment_form"):
     st.divider()
     st.header("四、重大風險閘門")
 
+    st.caption(
+        "重大條件尚未具備時，即使財務報酬良好，"
+        "系統也不會直接建議全面導入。"
+    )
+
     gate_col1, gate_col2 = st.columns(2)
 
     with gate_col1:
@@ -327,6 +353,10 @@ with st.form("assessment_form"):
         use_container_width=True,
     )
 
+
+# ---------------------------------------------------------
+# 執行規則式評估
+# ---------------------------------------------------------
 
 if submitted:
     try:
@@ -417,6 +447,16 @@ if submitted:
     except ValueError as error:
         st.error(f"輸入資料有誤：{error}")
 
+    except Exception as error:
+        st.error("評估過程發生錯誤。")
+
+        with st.expander("查看技術錯誤"):
+            st.exception(error)
+
+
+# ---------------------------------------------------------
+# 顯示評估結果
+# ---------------------------------------------------------
 
 result = st.session_state.assessment_result
 
@@ -435,11 +475,13 @@ if result is not None:
 
     if decision == "建議優先進入受控試點":
         st.success(f"### {decision}")
+
     elif decision in {
         "建議補充資料後進入受控試點",
         "建議補充資料後再評估",
     }:
         st.warning(f"### {decision}")
+
     else:
         st.error(f"### {decision}")
 
@@ -592,7 +634,9 @@ if result is not None:
         scenario_chart_rows
     ).set_index("情境")
 
-    st.bar_chart(scenario_chart_dataframe)
+    st.bar_chart(
+        scenario_chart_dataframe
+    )
 
     conservative_financials = scenario_results[
         "保守情境"
@@ -633,6 +677,15 @@ if result is not None:
         st.warning(
             f"保守情境預估需 {conservative_payback:.1f} 個月回本，"
             "建議確認醫院是否能接受超過兩年的資金回收期。"
+        )
+
+    if (
+        conservative_roi is not None
+        and conservative_roi <= 0
+    ):
+        st.error(
+            "保守情境下三年 ROI 不為正，"
+            "專案對關鍵假設較為敏感。"
         )
 
     with st.expander("查看三情境假設"):
@@ -690,7 +743,9 @@ if result is not None:
             }
         )
 
-    score_dataframe = pd.DataFrame(score_rows)
+    score_dataframe = pd.DataFrame(
+        score_rows
+    )
 
     st.dataframe(
         score_dataframe,
@@ -709,15 +764,22 @@ if result is not None:
     if hard_gate_risks:
         for risk in hard_gate_risks:
             st.warning(risk)
+
     else:
-        st.success("目前沒有觸發重大風險閘門。")
+        st.success(
+            "目前沒有觸發重大風險閘門。"
+        )
+
+    # -----------------------------------------------------
+    # AI 管理層報告
+    # -----------------------------------------------------
 
     st.divider()
-    st.header("AI 管理層報告")
+    st.header("🤖 AI 管理層報告")
 
     st.caption(
-        "AI 僅負責解讀既有計算結果，不會修改 ROI、"
-        "可行性分數、重大風險或規則引擎決策。"
+        "AI 僅負責解讀既有研究與計算結果，"
+        "不會自行修改 ROI、評分、重大風險或規則引擎決策。"
     )
 
     generate_report = st.button(
@@ -727,7 +789,9 @@ if result is not None:
     )
 
     if generate_report:
-        with st.spinner("正在整理管理層摘要與試點建議……"):
+        with st.spinner(
+            "正在整理管理層摘要與試點建議……"
+        ):
             try:
                 st.session_state.ai_management_report = (
                     generate_management_report(
@@ -746,12 +810,17 @@ if result is not None:
                     "AI 報告產生失敗，請檢查 API key、"
                     "API 額度或網路狀態。"
                 )
-                st.exception(error)
+
+                with st.expander("查看技術錯誤"):
+                    st.exception(error)
 
     report = st.session_state.ai_management_report
 
     if report:
-        st.success("AI 管理層報告已完成")
+        st.success(
+            "AI 管理層報告已完成。"
+        )
+
         st.markdown(report)
 
         st.download_button(
